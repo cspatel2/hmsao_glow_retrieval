@@ -2,6 +2,7 @@
 from __future__ import annotations
 from queue import Empty, Queue, ShutDown
 from threading import Thread
+import traceback
 
 from networkx import communicability_betweenness_centrality
 from settings import Directories, is_interactive_session
@@ -115,13 +116,6 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s', inputtype='timedelt
                 remainder, constants[field])  # type: ignore
     return f.format(fmt, **values)
 
-
-# %%
-# sds = xr.load_dataset('keo_scale.nc')
-# scale_5577 = sds['5577'].values[::-1]
-# scale_6300 = sds['6300'].values[::-1]
-# za_min = sds['za_min'].values
-# za_max = sds['za_max'].values
 # %%
 
 
@@ -194,12 +188,9 @@ class GLOWMin:
                 self._time, self._lat, self._lon, self._heading, n_pts=20,
                 show_progress=False, mpool=self._pool,
                 kwargs={
-                    'Q': None, #  CHANGE THIS TO FIT WITH PARTICLE PERCIP
-                    'Echar': None, # CHANGE THIS TO FIT WITH PARTICLE PERCIP
+                    'Q': params[0], 
+                    'Echar': params[1], 
                     'geomag_params': self._geopar,
-                    'density_perturbation': (
-                        params[0], params[1], params[2], params[3], params[4], 1, params[5]
-                    ),
                     'magmodel': magmodel,
                     'version': version
                 }
@@ -208,7 +199,7 @@ class GLOWMin:
             self._pool.terminate()
             self._pool.join()
             exit(0)
-
+        # print('za min:', self._zamin, ' za max:', self._zamax)/
         ec5577 = glow2d.glow2d_polar.get_emission(
             # ascending
             iono, feature='5577',  # type: ignore
@@ -229,7 +220,7 @@ class GLOWMin:
         )) / 100  # type: ignore
         if self._save:
             self._out.append(
-                (params[0], params[1], params[2], params[3], params[4], params[5], ret))
+                (params[0], params[1], ret))
         now = perf_counter_ns()
         if (now - self._start) > 120e9:
             self._pbar.set_description(
@@ -252,11 +243,12 @@ def draw_loop(file: Path, ready: Any, shutdown: Any, data: mp.Queue, save_fig: O
     br6300 = []
     ctrlc = False
 
-    ds = xr.load_dataset(file)
+
+    nds = xr.load_dataset(file)
+    ds = nds.copy()
+    if 'daybool' in list(ds.coords): #pick out only night time data and drop everything else
+        ds = ds.where(ds.daybool == 0, drop=True)
     tstamps = ds.tstamp.values
-    # start = pd.to_datetime(tstamps[0]).to_pydatetime()
-    # end = pd.to_datetime(tstamps[-1]).to_pydatetime()
-    # print(start,end)
     start = dt.datetime.fromtimestamp(tstamps[0], tz= dt.timezone.utc)
     end = dt.datetime.fromtimestamp(tstamps[-1], tz= dt.timezone.utc)
     start += dt.timedelta(hours=1)
@@ -365,11 +357,11 @@ def draw_loop(file: Path, ready: Any, shutdown: Any, data: mp.Queue, save_fig: O
 
 # %%
 # dates = ['20220209']
-dates = [
-    '20220126', '20220209', '20220215', '20220218',
-    '20220219', '20220226', '20220303', '20220304'
-]
-za_idx = 20
+# dates = [
+#     '20220126', '20220209', '20220215', '20220218',
+#     '20220219', '20220226', '20220303', '20220304'
+# ]
+# za_idx = 20
 
 
 def run_glow_fit(
@@ -390,7 +382,16 @@ def run_glow_fit(
             continue
 
         time_start = perf_counter_ns()
-        ds = xr.load_dataset(counts_dir / f'hmsao-l2c_{date}.nc')
+        fns = list(counts_dir.glob(f'*{date}*.nc'))
+        fns.sort()
+        fn = fns[-1]
+        nds = xr.load_dataset(fn)
+        ds = nds.copy()
+        if 'daybool' in list(ds.coords): #pick out only night time data and drop everything else
+            ds = ds.where(ds.daybool == 0, drop=True)
+        # drop all the  negative za values
+        ds = ds.where(ds.za > 0.5,   drop=True)
+        ds = ds.assign_coords(za = np.abs(ds.za.values))
         tstamps = ds.tstamp.values
         # start = pd.to_datetime(tstamps[0]).to_pydatetime()
         # end = pd.to_datetime(tstamps[-1]).to_pydatetime()
@@ -406,13 +407,12 @@ def run_glow_fit(
         # dheight = np.mean(np.diff(height))
         height = ds.za.values
         dheight = np.mean(np.diff(height))  
-        za_min = ds.za.min().values
-        za_max = ds.za.max().values
+        za_min = height-(dheight/2)
+        za_max = height+(dheight/2)
         # tstamps = list(map(lambda t: pd.to_datetime(
         #     t).to_pydatetime().astimezone(pytz.utc), tstamps))
         tstamps = list(map(lambda t: dt.datetime.fromtimestamp(t, tz=dt.timezone.utc), ds.tstamp.values))
-        ttstamps = list(map(lambda i: (
-            tstamps[i] - tstamps[0]).total_seconds()/3600, range(len(tstamps))))
+        ttstamps = list(map(lambda i: (tstamps[i] - tstamps[0]).total_seconds()/3600, range(len(tstamps))))
         imgs_5577 = (ds['5577'].values.T[::-1, :])[za_idx, :]
         stds_5577 = (ds['5577_err'].values.T[::-1, :])[za_idx, :]
         imgs_6300 = (ds['6300'].values.T[::-1, :])[za_idx, :]
@@ -431,7 +431,7 @@ def run_glow_fit(
             get_smoothed_geomag(tstamps)  # type: ignore
         br6300 = np.zeros((len(ds.tstamp), len(ds.za)), dtype=float)
         br5577 = np.zeros((len(ds.tstamp), len(ds.za)), dtype=float)
-        fparams = np.zeros((len(ds.tstamp), 6), dtype=float)
+        fparams = np.zeros((len(ds.tstamp), 2), dtype=float)
         fit_res = []
         failed = 0
         pbar = tqdm(range(len(ds.tstamp.values)), dynamic_ncols=True)
@@ -441,7 +441,7 @@ def run_glow_fit(
             shutdown = mp.Event()
             data_queue = mp.Queue()
             plot_thread = mp.Process(None, draw_loop, args=(
-                counts_dir / f'hmsao-l2c_{date}.nc',
+                fn,
                 ready,
                 shutdown,
                 data_queue,
@@ -454,13 +454,19 @@ def run_glow_fit(
             data_queue = None
             plot_thread = None
 
-        LOW = 0.1
-        HIGH = 4.0
+        # Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation.
+        Q_LOW = 0.01
+        Q_HIGH = 1000
+        #Energy of precipitating electrons (KeV). Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
+        E_LOW = 0.5
+        E_HIGH = 1e6 
 
         if random:
-            x0 = tuple(np.random.uniform(0.5, 2, 6).tolist())
+            q_rand = np.random.uniform(Q_LOW, Q_HIGH)
+            e_rand = np.random.uniform(E_LOW, E_HIGH)
+            x0 = (q_rand, e_rand)
         else:
-            x0 = (1, 1, 1, 1, 1, 1)
+            x0 = (Q_LOW, E_LOW)
         x_init = np.asarray(x0)
         with open(model_dir / 'initprops.txt', 'a') as initprops:
             initprops.write(start.strftime('%Y-%m-%d,'))
@@ -489,16 +495,17 @@ def run_glow_fit(
                         'f107p': f107p[idx],
                         'Ap': ap[idx]
                     }
+                    heading = 90 # assume east heaing
                     minf = GLOWMin(
                         # type: ignore
-                        tstamps[idx], lat, lon, 40, geomag_params=geomag_params, za_min=za_min,
-                        za_max=za_max, za_idx=za_idx, br=bgt, ratio=rat, d_br=b63.std_dev, d_rat=d_rat, save_walk=save,
+                        tstamps[idx], lat, lon, heading, geomag_params=geomag_params, za_min=np.deg2rad(za_min),
+                        za_max=np.deg2rad(za_max), za_idx=za_idx, br=bgt, ratio=rat, d_br=b63.std_dev, d_rat=d_rat, save_walk=save,
                         pbar=pbar, oldmodel=oldmodel
                     )
                     res: OptimizeResult = least_squares(
                         minf.update, x0=x0,
-                        bounds=((LOW, LOW, LOW, LOW, LOW, LOW),
-                                (HIGH, HIGH, HIGH, HIGH, HIGH, HIGH)),
+                        bounds=((Q_LOW, E_LOW),
+                                (Q_HIGH, E_HIGH)),
                         diff_step=0.05, xtol=1e-10, ftol=1e-3, max_nfev=3000
                     )
                     if save:
@@ -506,8 +513,7 @@ def run_glow_fit(
 
                     fit_res.append((ds.tstamp.values[idx], res))
                     x0 = (
-                        res.x[0], res.x[1], res.x[2],
-                        res.x[3], res.x[4], res.x[5]
+                        res.x[0], res.x[1]
                     )
                     fp = minf.fit_params
                     perf = list(minf.fit_perf)  # type: ignore
@@ -516,7 +522,7 @@ def run_glow_fit(
                     br_diff_str = '%+.2f' % (br_diff)
                     if fp is not None:
                         pbar.set_description(
-                            f'[{fp[0]:.2f} {fp[1]:.2f} {fp[2]:.2f} {fp[3]:.2f} {fp[4]:.2f} {fp[5]:.2f}] ({perf[1]:.2e}){br_diff_str}% | {perf[2]:.2f}<->{perf[3]:.2f} ({failed}) ',
+                            f'[{fp[0]:.2f} {fp[1]:.2f}] ({perf[1]:.2e}){br_diff_str}% | {perf[2]:.2f}<->{perf[3]:.2f} ({failed}) ',
                             refresh=True,
                         )
                     else:
@@ -529,13 +535,15 @@ def run_glow_fit(
                     br6300[idx, :] += out[1]
                     fparams[idx, :] += fp
                 except Exception as e:
+                    traceback_str = traceback.format_exc()
                     fit_res.append((ds.tstamp.values[idx], None))
                     br5577[idx, :] += np.nan
                     br6300[idx, :] += np.nan
                     fparams[idx, :] += np.nan
                     failed += 1
                     fitlog.write(
-                        f'{ds.tstamp.values[idx]}, {idx}, {str(e)}\n')
+                        f'{ds.tstamp.values[idx]}, {idx}, {str(e)}: {traceback_str}\n')
+                    fitlog.flush()
                     pbar.set_description(
                         f'Failed {idx + 1}: {e}', refresh=True)
 
@@ -561,13 +569,13 @@ def run_glow_fit(
                 'f107': (('tstamp'), f107),
                 'f107p': (('tstamp'), f107p),
                 'init_params': (('elems'), x_init),
-                'density_perturbation': (('tstamp', 'elems'), fparams),
+                'fit_params': (('tstamp', 'elems'), fparams),
                 'lat': (('tstamp'), [lat]*len(tstamps)),
                 'lon': (('tstamp'), [lon]*len(tstamps)),
                 'to_r': 1/(dheight * 4*np.pi*1e-6)
             },
             coords={'tstamp': ds.tstamp.values, 'za': ds.za.values,
-                    'elems': ['O', 'O2', 'N2', 'N4S', 'N2D', 'e']}
+                    'elems': ['Q', 'Echar']}
         )
         unit_desc = {
             '5577': ('cm^{-2} s^{-1} rad^{-1}', '5577 Brightness'),
@@ -576,7 +584,7 @@ def run_glow_fit(
             'f107a': ('sfu', '81-day rolling average of F10.7 solar flux'),
             'f107': ('sfu', 'F10.7 solar flux on present day'),
             'f107p': ('sfu', 'F10.7 solar flux on previous day'),
-            'density_perturbation': ('', 'Relative density perturbation'),
+            'fit_params': ('', 'Q (erg/cm^2/s) and E (eV) fit parameters'),
             'lat': ('deg', 'Latitude'),
             'lon': ('deg', 'Longitude'),
             'to_r': ('R rad^{-1}', 'Convert brightness to Rayleigh')
@@ -598,54 +606,65 @@ def run_glow_fit(
 
 
 # %% Run code
-if not is_interactive_session():
-    import argparse
-    parser = argparse.ArgumentParser(
-        description='Run GLOW model fitting for data.')
-    parser.add_argument('suffix', type=str, default=None, nargs='*',
-                        help='Suffix of directory.')
-    parser.add_argument('--dates', type=str, nargs='+', default=dates,
-                        help='List of dates to process (YYYYMMDD format).')
-    parser.add_argument('--za_idx', type=int, default=za_idx,
-                        help='Zenith angle index to use for fitting (default: 20).')
-    parser.add_argument('--show_figs', action='store_true',
-                        help='Show fit figures during processing.')
-    parser.add_argument('--save_figs', action='store_true',
-                        help='Save fit figures to disk.')
-    parser.add_argument('--random', action='store_true',
-                        help='Use random initial parameters for fitting.')
-    parser.add_argument('--oldmodel', action='store_true',
-                        help='Use old atmosphere and ionosphere models.')
-    args = parser.parse_args()
-    suffixes = list(map(lambda x: x.strip(), args.suffix))
-    suffixes = list(filter(lambda x: len(x) > 0, suffixes))
-    if len(suffixes) == 0:
-        suffixes = [None]
-    for suffix in suffixes:
-        settings = Directories(suffix=suffix)
-        save_figs = args.save_figs
-        show_figs = args.show_figs
-        print(f'Model directory: {settings.model_dir}')
-        run_glow_fit(
-            counts_dir=settings.counts_dir,
-            model_dir=settings.model_dir,
-            dates=args.dates,
-            za_idx=args.za_idx,
-            random=args.random,
-            show_figs=args.show_figs,
-            save_figs=args.save_figs,
-            oldmodel=args.oldmodel,
-        )
+# if not is_interactive_session():
+#     import argparse
+#     parser = argparse.ArgumentParser(
+#         description='Run GLOW model fitting for data.')
+#     parser.add_argument('suffix', type=str, default=None, nargs='*',
+#                         help='Suffix of directory.')
+#     parser.add_argument('--dates', type=str, nargs='+', default=dates,
+#                         help='List of dates to process (YYYYMMDD format).')
+#     parser.add_argument('--za_idx', type=int, default=za_idx,
+#                         help='Zenith angle index to use for fitting (default: 20).')
+#     parser.add_argument('--show_figs', action='store_true',
+#                         help='Show fit figures during processing.')
+#     parser.add_argument('--save_figs', action='store_true',
+#                         help='Save fit figures to disk.')
+#     parser.add_argument('--random', action='store_true',
+#                         help='Use random initial parameters for fitting.')
+#     parser.add_argument('--oldmodel', action='store_true',
+#                         help='Use old atmosphere and ionosphere models.')
+#     args = parser.parse_args()
+#     suffixes = list(map(lambda x: x.strip(), args.suffix))
+#     suffixes = list(filter(lambda x: len(x) > 0, suffixes))
+#     if len(suffixes) == 0:
+#         suffixes = [None]
+#     for suffix in suffixes:
+#         settings = Directories(suffix=suffix)
+#         save_figs = args.save_figs
+#         show_figs = args.show_figs
+#         print(f'Model directory: {settings.model_dir}')
+#         run_glow_fit(
+#             counts_dir=settings.counts_dir,
+#             model_dir=settings.model_dir,
+#             dates=args.dates,
+#             za_idx=args.za_idx,
+#             random=args.random,
+#             show_figs=args.show_figs,
+#             save_figs=args.save_figs,
+#             oldmodel=args.oldmodel,
+#         )
 # %%
 from pathlib import Path
-counts_dir = Path('../data/l2c')
+counts_dir = Path('/home/charmi/locsststor/proc/hmsao/l2c')
+fns = list(counts_dir.glob('*.nc'))
+fns.sort()
+
+dates = []
+for f in fns:
+    parts = f.stem.split('_')
+    dates.append(parts[-1].split('T')[0])
+    dates.append(parts[-2].split('T')[0])
+dates = np.unique(dates)
+
+#%%
 model_dir = Path('../data/model')
 dates = np.unique([Path(f).stem.split('_')[-1] for f in counts_dir.glob('*.nc')])
 za_idx = 20
 random = True
 show_figs = True
 save_figs = True
-oldmodel = True
+oldmodel = False
 
 run_glow_fit(
     counts_dir=counts_dir,
