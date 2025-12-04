@@ -452,10 +452,10 @@ def run_glow_fit(
         Q_HIGH = 1000
         #Energy of precipitating electrons (eV). Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
         E_LOW = 0.5
-        E_HIGH = 1e4 
+        E_HIGH = 5e5 
         # density perturbations
         LOW = 0.1
-        HIGH = 4.0
+        HIGH = 5.0
 
 
 
@@ -618,7 +618,8 @@ if not is_interactive_session():
         description='Run GLOW model fitting for data.')
     parser.add_argument(
         '--counts_dir', type=str,required=True ,default=None, nargs='?', help='Directory containing HMSAO L2C count data files.')
-    parser.add_argument('--dest_dir', type=str, required=True, default=None, nargs='?', help='Directory to save model and fit result files.')
+    # parser.add_argument('--dest_dir', type=str, required=True, default=None, nargs='?', help='Directory to save model and fit result files.')
+    parser.add_argument('--dates', type=str, nargs='*', default=None, help='Dates to process (YYYY-MM-DD). If not provided, all dates in counts_dir will be processed.')
     parser.add_argument('--suffix', type=str, nargs='*', default=[''], help='Suffixes for multiple model runs (default: none).')
     parser.add_argument('--za_idx', type=int, default=20, help='Zenith angle index to use for fitting (default: 20).')
     parser.add_argument('--show_figs', action='store_true',
@@ -634,37 +635,46 @@ if not is_interactive_session():
     
     args = parser.parse_args()
     args.counts_dir = Path(args.counts_dir)
-    args.dest_dir = Path(args.dest_dir)
+    # args.dest_dir = Path(args.dest_dir)
+    # args.dest_dir.mkdir(parents=True, exist_ok=True)
 
-    dates = []
+    #check dates 
+    alldates = [] #all dates in the folder
     fns = list(args.counts_dir.glob('*.nc'))
     fns.sort()
     for f in fns:
         parts = f.stem.split('_')
-        dates.append(parts[-1].split('T')[0])
-        dates.append(parts[-2].split('T')[0])
-    dates = np.unique(dates)
-    dates = np.unique([Path(f).stem.split('_')[-1] for f in args.counts_dir.glob('*.nc')])
+        alldates.append(parts[-1].split('T')[0])
+        alldates.append(parts[-2].split('T')[0])
+    alldates = np.unique(alldates)
+    alldates = np.unique([Path(f).stem.split('_')[-1] for f in args.counts_dir.glob('*.nc')])
+    if args.dates is not None and len(args.dates) > 0:
+        valid_dates = list(filter(lambda x: x in args.dates, alldates))
+        args.dates = valid_dates
+    else: 
+        args.dates = alldates
+
+    # process suffixes
     suffixes = list(map(lambda x: x.strip(), args.suffix))
     suffixes = list(filter(lambda x: len(x) > 0, suffixes))
 
-    if len(dates) > 1:
-        if len(suffixes) == 0: suffixes = ['']
-
-        for suffix in suffixes:
-            save_dir = args.dest_dir / suffix
-            save_dir.mkdir(parents=True, exist_ok=True)
-            print(f'Model directory: {save_dir}')
-            run_glow_fit(
-                counts_dir=args.counts_dir,
-                model_dir=save_dir,
-                dates=dates,
-                za_idx=args.za_idx,
-                random=args.random,
-                show_figs=args.show_figs,
-                save_figs=args.save_figs,
-                oldmodel=args.oldmodel,
-            )
+    if len(suffixes) == 0:
+        suffixes = [None]
+    for suffix in suffixes:
+        settings = Directories(suffix=suffix, basedir='model_neutral_qe_2')
+        save_figs = args.save_figs
+        show_figs = args.show_figs
+        print(f'Model directory: {settings.model_dir}')
+        run_glow_fit(
+            counts_dir=args.counts_dir,
+            model_dir=settings.model_dir,
+            dates=args.dates,
+            za_idx=args.za_idx,
+            random=args.random,
+            show_figs=args.show_figs,
+            save_figs=args.save_figs,
+            oldmodel=args.oldmodel,
+        )
 
 # %%
 # from pathlib import Path
