@@ -86,7 +86,7 @@ def get_smoothed_geomag(tstamps: np.ndarray, tzaware: bool = False) -> Tuple[Lis
 def get_date(filename: Path) -> str:
     """Get the date from a filename."""
     base = filename.name
-    return base.rsplit('.')[0].rsplit('_')[-1]
+    return base.rsplit('.')[0].split('_')[-1]
 
 # %%
 
@@ -136,6 +136,7 @@ def fill_array(arr: np.ndarray, tstamps: List[dt.datetime], axis: int = 1) -> Tu
 
 
 def fill_array_1d(arr: np.ndarray, tstamps: List[dt.datetime]) -> Tuple[List[dt.datetime], np.ndarray, Optional[np.ndarray]]:
+    '''Fills gaps in 1D array based on timestamps.'''
     if arr.ndim != 1:
         raise ValueError('Array must be 1 dim')
     ts = np.asarray(list(map(lambda t: t.timestamp(), tstamps)), dtype=float)
@@ -143,7 +144,9 @@ def fill_array_1d(arr: np.ndarray, tstamps: List[dt.datetime]) -> Tuple[List[dt.
     t_delta = dts.min()
     gaps = dts[np.where(dts > t_delta)[0]]
     gaps = np.asarray(gaps // t_delta, dtype=int)
+    # print(gaps)
     dts = np.diff(dts)
+    # print(dts)
     oidx = np.where(dts < 0)[0]
     if len(oidx) == 0:
         return tstamps, arr, None
@@ -158,7 +161,6 @@ def fill_array_1d(arr: np.ndarray, tstamps: List[dt.datetime]) -> Tuple[List[dt.
     nanlocs = []
     for idx, oi in enumerate(oidx):
         out[start:oi+1] = arr[dstart:oi+1]
-
         start = oi + gaps[idx]
         nanlocs.append(oi)
         dstart = oi + 1

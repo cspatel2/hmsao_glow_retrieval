@@ -18,16 +18,18 @@ def is_interactive_session() -> bool:
 class Directories:
     """Class to manage directories for storing model data, and various derivatives.
     """
-    def __init__(self, suffix: Optional[str] = None):
+    def __init__(self,basedir:Optional[str] = None, suffix: Optional[str] = None):
         """Initialize the Directories class with an optional suffix.
 
         Args:
+            basefir (Optional[str], optional): Base directory to use. Defaults to None, which uses ROOT_DIR.
             suffix (Optional[str], optional): Suffix to append to directory names. Defaults to None.
         """
         self._suffix = suffix.strip() if suffix else None
+        self._basedir = Path(basedir) if basedir else ''
 
     def _create_path(self, name: str) -> Path:
-        path = ROOT_DIR / Path('_'.join(list(filter(None, [name, self._suffix]))))
+        path = ROOT_DIR/ self._basedir / Path('_'.join(list(filter(None, [name, self._suffix]))))
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -39,6 +41,14 @@ class Directories:
             Optional[str]: Suffix used for directory names.
         """
         return self._suffix
+    
+    @property
+    def basedir(self):
+        """ Get the base directory.
+
+        Returns:
+        """
+        return self._basedir
 
     @property
     def model_dir(self) -> Path:
