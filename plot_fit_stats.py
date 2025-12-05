@@ -22,38 +22,10 @@ from settings import ROOT_DIR, Directories
 import matplotlib.dates as mdates
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+from plotting_functions import init
 # %%
 
-
-def init(suffix: str, run=False, rootdir:str|Path = ROOT_DIR) -> List[str]:
-    """Populate the directories with the required results.
-
-    Returns:
-        List[str]: A list of valid suffixes for the directories.
-    """
-    if isinstance(rootdir, str):
-        rootdir = Path(rootdir)
-    dirs = list(rootdir.glob(f'keomodel_{suffix}*'))
-    suffixes = [d.name.split('_', 1)[-1] for d in dirs]
-    suffixes = natsort.natsorted(suffixes)
-    if run:
-        for suff in suffixes:
-            dirname = ROOT_DIR / f'keomodel_{suff}'
-            if not dirname.exists():
-                print(f'[ERROR] {dirname} does not exist. Skipping.')
-                continue
-            print(f'Running generate_vert for {suff}')
-            os.system(f'python generate_vert.py {suff}')
-            print(f'Running fit_den for {suff}')
-            os.system(f'python fit_den.py {suff}')
-            print(f'Running fit_loc for {suff}')
-            os.system(f'python fit_loc.py {suff}')
-            print(f'Running fit_tec for {suff}')
-            os.system(f'python fit_tec.py {suff}')
-
-    return suffixes
-
-def compile_density_stats(suffixes: List[str], base_suffix: Optional[str] = None, rootdir:str|Path = ROOT_DIR) -> dict[str, xarray.Dataset]:
+def compile_fit_stats(suffixes: List[str], base_suffix: Optional[str] = None, rootdir:str|Path = ROOT_DIR) -> dict[str, xarray.Dataset]:
     if base_suffix is not None:
         msuffixes = [base_suffix] + suffixes
     else:
@@ -261,7 +233,7 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         # --------------------------------------------------------
         # AXIS LABELS
         # --------------------------------------------------------
-        axL.set_ylabel('[cm$^{-3}$]')
+        # axL.set_ylabel('[cm$^{-3}$]')
         axR.set_ylabel('Q [uW/m$^2$]')
         cax.set_ylabel('E$_{o}$ [keV]', color=lprops['Echar']['color'])
         cax.tick_params(axis='y', labelcolor=lprops['Echar']['color'])
@@ -275,6 +247,7 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         # --------------------------------------------------------
         # LEGENDS ONLY IN FIRST ROW
         # --------------------------------------------------------
+        
         if i == 0:
             # Left subplot legend (species except Q/Echar)
             hL, lL = axL.get_legend_handles_labels()
@@ -314,7 +287,7 @@ if __name__ == '__main__':
     # Populate directories and compile stats
     suffixes = init('nqe', rootdir='model_neutral_qe')
     print(f'Found suffixes: {suffixes}')
-    compiled_stats = compile_density_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_neutral_qe')
+    compiled_stats = compile_fit_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_neutral_qe')
     
     #plot
     stats = compiled_stats.copy()
