@@ -255,8 +255,6 @@ def draw_loop(file: Path, ready: Any, shutdown: Any, data: mp.Queue, save_fig: O
     end = dt.datetime.fromtimestamp(tstamps[-1], tz= dt.timezone.utc)
     start += dt.timedelta(hours=1)
     end -= dt.timedelta(hours=1)
-    # start = end - dt.timedelta(hours=2)
-    # end = start + dt.timedelta(hours=2)
     ds = ds.loc[dict(tstamp=slice(start.timestamp(), end.timestamp()))]
     tstamps = ds.tstamp.values
     tlen = len(ds.tstamp.values)
@@ -385,18 +383,14 @@ def run_glow_fit(
         ds = ds.where(ds.za > 0.5,   drop=True)
         ds = ds.assign_coords(za = np.abs(ds.za.values))
         tstamps = ds.tstamp.values
-        # start = pd.to_datetime(tstamps[0]).to_pydatetime()
-        # end = pd.to_datetime(tstamps[-1]).to_pydatetime()
         start = dt.datetime.fromtimestamp(tstamps[0], tz= dt.timezone.utc)
         end = dt.datetime.fromtimestamp(tstamps[-1], tz= dt.timezone.utc)
         start += dt.timedelta(hours=1)
         end -= dt.timedelta(hours=1)
-        # start = end - dt.timedelta(hours=2)
-        # end = start + dt.timedelta(hours=2)
+
         ds = ds.loc[dict(tstamp=slice(start.timestamp(), end.timestamp()))]
         tstamps = ds.tstamp.values
-        # height = sds.height.values
-        # dheight = np.mean(np.diff(height))
+
         height = ds.za.values
         dheight = np.mean(np.diff(height))  
         za_min = height-(dheight/2)
@@ -448,16 +442,14 @@ def run_glow_fit(
             plot_thread = None
 
         # Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation.
-        Q_LOW = 0.001/2
+        Q_LOW = 0.01
         Q_HIGH = 1000
         #Energy of precipitating electrons (eV). Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
         E_LOW = 0.5
-        E_HIGH = 5e5 
+        E_HIGH = 1e4 
         # density perturbations
         LOW = 0.1
-        HIGH = 5.0
-
-
+        HIGH = 4.0
 
         if random:
             x0 = tuple(np.random.uniform(0.5, 2, 5).tolist()) # random init for density perturbations
@@ -618,7 +610,8 @@ if not is_interactive_session():
         description='Run GLOW model fitting for data.')
     parser.add_argument(
         '--counts_dir', type=str,required=True ,default=None, nargs='?', help='Directory containing HMSAO L2C count data files.')
-    # parser.add_argument('--dest_dir', type=str, required=True, default=None, nargs='?', help='Directory to save model and fit result files.')
+    
+    parser.add_argument('--dest_dir', type=str, required=True, default=None, nargs='?', help='name of directory to save model and fit result files.')
     parser.add_argument('--dates', type=str, nargs='*', default=None, help='Dates to process (YYYY-MM-DD). If not provided, all dates in counts_dir will be processed.')
     parser.add_argument('--suffix', type=str, nargs='*', default=[''], help='Suffixes for multiple model runs (default: none).')
     parser.add_argument('--za_idx', type=int, default=20, help='Zenith angle index to use for fitting (default: 20).')
@@ -661,7 +654,7 @@ if not is_interactive_session():
     if len(suffixes) == 0:
         suffixes = [None]
     for suffix in suffixes:
-        settings = Directories(suffix=suffix, basedir='model_neutral_qe_2')
+        settings = Directories(suffix=suffix, basedir=args.dest_dir)
         save_figs = args.save_figs
         show_figs = args.show_figs
         print(f'Model directory: {settings.model_dir}')
@@ -671,8 +664,8 @@ if not is_interactive_session():
             dates=args.dates,
             za_idx=args.za_idx,
             random=args.random,
-            show_figs=args.show_figs,
-            save_figs=args.save_figs,
+            show_figs=True,
+            save_figs=True,
             oldmodel=args.oldmodel,
         )
 
