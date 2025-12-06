@@ -267,9 +267,11 @@ def draw_loop(file: Path, ready: Any, shutdown: Any, data: mp.Queue, save_fig: O
     ttstamps = list(map(lambda i: (
         tstamps[i] - tstamps[0]).total_seconds()/3600, range(len(tstamps))))
     imgs_5577 = (ds['5577'].values.T[::-1, :])[za_idx, :]
-    stds_5577 = (ds['5577_err'].values.T[::-1, :])[za_idx, :]
+    stds_5577 = np.full_like(imgs_5577, np.nan)
+    # stds_5577 = (ds['5577_err'].values.T[::-1, :])[za_idx, :]#
     imgs_6300 = (ds['6300'].values.T[::-1, :])[za_idx, :]
-    stds_6300 = (ds['6300_err'].values.T[::-1, :])[za_idx, :]
+    stds_6300 = np.full_like(imgs_6300, np.nan)
+    # stds_6300 = (ds['6300_err'].values.T[::-1, :])[za_idx, :]
     imgs_5577 = gaussian_filter(np.ma.array(
         imgs_5577, mask=np.isnan(imgs_5577)), sigma=2) #*scale_5577[za_idx]
     stds_5577 = gaussian_filter(np.ma.array(
@@ -358,6 +360,8 @@ def run_glow_fit(
     counts_dir: Path,
     model_dir: Path,
     dates: Iterable[str],
+    lat:Numeric,
+    lon:Numeric,
     za_idx: int = 20,
     random: bool = False,
     show_figs: bool = False,
@@ -412,7 +416,7 @@ def run_glow_fit(
         stds_6300 = gaussian_filter(np.ma.array(
             stds_6300, mask=np.isnan(stds_6300)), sigma=2) #*scale_6300[za_idx]
 
-        lat, lon = 42.64981361744372, -71.31681056737486
+        # lat, lon = 42.64981361744372, -71.31681056737486
         _, ap, f107, f107a, f107p = \
             get_smoothed_geomag(tstamps)  # type: ignore
         br6300 = np.zeros((len(ds.tstamp), len(ds.za)), dtype=float)
@@ -441,15 +445,38 @@ def run_glow_fit(
             data_queue = None
             plot_thread = None
 
+        #RUN 0
+        # # Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation.
+        # Q_LOW = 0.01
+        # Q_HIGH = 1000
+        # #Energy of precipitating electrons (eV). Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
+        # E_LOW = 0.5
+        # E_HIGH = 1e5 
+        # # density perturbations
+        # LOW = 0.1
+        # HIGH = 10.0
+
+        # RUN 1
         # Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation.
         Q_LOW = 0.01
         Q_HIGH = 1000
         #Energy of precipitating electrons (eV). Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
         E_LOW = 0.5
-        E_HIGH = 1e4 
+        E_HIGH = 1e5 
         # density perturbations
-        LOW = 0.1
-        HIGH = 4.0
+        LOW = 0.01
+        HIGH = 6
+        
+        # # #RUN 2
+        # # Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation.
+        # Q_LOW = 0.001
+        # Q_HIGH = 100
+        # #Energy of precipitating electrons (eV). Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
+        # E_LOW = 0.5
+        # E_HIGH = 1e5 
+        # # density perturbations
+        # LOW = 0.01
+        # HIGH = 6
 
         if random:
             x0 = tuple(np.random.uniform(0.5, 2, 5).tolist()) # random init for density perturbations
@@ -567,7 +594,7 @@ def run_glow_fit(
                 'fit_params': (('tstamp', 'param'), fparams[:, 5:]),
                 'lat': (('tstamp'), [lat]*len(tstamps)),
                 'lon': (('tstamp'), [lon]*len(tstamps)),
-                'to_r': 1/np.deg2rad(dheight) / (4*np.pi*1e6)
+                # 'to_r': 1/np.deg2rad(dheight) / (4*np.pi*1e6)
 
                 # 'to_r': 1/(np.deg2rad(dheight) * 4*np.pi*1e-6)
             },
@@ -585,8 +612,10 @@ def run_glow_fit(
             'fit_params': ('', 'Q (erg/cm^2/s) and E (eV) fit parameters'),
             'lat': ('deg', 'Latitude'),
             'lon': ('deg', 'Longitude'),
-            'to_r': ('R rad^{-1}', 'Convert brightness to Rayleigh')
+
+            # 'to_r': ('R rad^{-1}', 'Convert brightness to Rayleigh')
         }
+        kds.attrs.update({'param_fitlims': f'Density perturbations: [{LOW}, {HIGH}] \n Q: [{Q_LOW}, {Q_HIGH}] erg/cm^2/s \n Echar: [{E_LOW}, {E_HIGH}] eV'})
         _ = list(map(lambda x: kds[x].attrs.update(
             {'units': unit_desc[x][0], 'description': unit_desc[x][1]}), unit_desc.keys()))
         kds.to_netcdf(model_file)
@@ -614,6 +643,8 @@ if not is_interactive_session():
     parser.add_argument('--dest_dir', type=str, required=True, default=None, nargs='?', help='name of directory to save model and fit result files.')
     parser.add_argument('--dates', type=str, nargs='*', default=None, help='Dates to process (YYYY-MM-DD). If not provided, all dates in counts_dir will be processed.')
     parser.add_argument('--suffix', type=str, nargs='*', default=[''], help='Suffixes for multiple model runs (default: none).')
+    parser.add_argument('--lat', type=float, required=True, help='Latitude of observation site. in deg.')
+    parser.add_argument('--lon', type=float, required=True, help='Longitude of observation site. in deg. ')
     parser.add_argument('--za_idx', type=int, default=20, help='Zenith angle index to use for fitting (default: 20).')
     parser.add_argument('--show_figs', action='store_true',
                         help='Show fit figures during processing.')
@@ -662,6 +693,8 @@ if not is_interactive_session():
             counts_dir=args.counts_dir,
             model_dir=settings.model_dir,
             dates=args.dates,
+            lat = args.lat,
+            lon = args.lon,
             za_idx=args.za_idx,
             random=args.random,
             show_figs=True,
