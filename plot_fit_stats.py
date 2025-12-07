@@ -84,6 +84,12 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         dates (List[str]): The dates to plot.
         savefig (str | None): If provided, the path to save the figure. if None, the figure will not be saved. Default is None.
     """
+    fontszie = 12
+    plt.rcParams.update({'font.size': fontszie,
+                          'axes.labelsize': fontszie,
+                         'axes.titlesize': fontszie, 
+                         'legend.fontsize': fontszie,
+                         'figure.titlesize': fontszie})
     import matplotlib.units as munits
     converter = mdates.ConciseDateConverter()
     munits.registry[np.datetime64] = converter
@@ -105,7 +111,7 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
     dates.sort()
     # Line properties
     lprops = {
-        'O': {'color': 'blue', 'linestyle': LINESTYLE_DICT['dotted'], 'label': 'O', 'lw': .95},
+        'O': {'color': 'blue', 'linestyle': LINESTYLE_DICT['dotted'], 'label': 'O+', 'lw': .95},
         'O2': {'color': 'red', 'linestyle': LINESTYLE_DICT['loosely dashed'], 'label': 'O$_2$', 'lw': 0.95},
         'N2': {'color': 'forestgreen', 'linestyle': LINESTYLE_DICT['dashdot'], 'label': 'N$_2$', 'lw': 0.95},
         'NO': {'color': 'purple', 'linestyle': LINESTYLE_DICT['densely dashdotted'], 'label': 'NO', 'lw': 0.95},
@@ -170,8 +176,10 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
 
 
         baseval = ds.isel(suffix=0)
-        handles_total = []
-        labels_total = []
+        handles_left = []
+        labels_left = []
+        handles_right = []
+        labels_right = []
 
         # ------------------------------------------------------------
         # Per-species plotting
@@ -196,24 +204,27 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
 
             if sp == 'Q':
                 conv = 1e3
-                axR.plot(times, meanval * conv, **lprops[sp])
-                axR.fill_between(times, minval*conv, maxval*conv,
+                line_R, = axR.plot(times, meanval * conv, **lprops[sp])
+                fill_R = axR.fill_between(times, minval*conv, maxval*conv,
                                  color=lprops[sp]['color'], alpha=0.2)
-                h, l = axR.get_legend_handles_labels()
-                handles_total += h; labels_total += l
+                handles_right.append((line_R,fill_R))
+                labels_right.append(fr'[{lprops[sp]["label"]}]$\pm 1\sigma$')
 
             elif sp == 'Echar':
                 conv = 1e-3
-                cax.plot(times, meanval * conv, **lprops[sp])
-                cax.fill_between(times, minval*conv, maxval*conv,
+                line_R, = cax.plot(times, meanval * conv, **lprops[sp])
+                fill_R = cax.fill_between(times, minval*conv, maxval*conv,
                                  color=lprops[sp]['color'], alpha=0.2)
-                h, l = cax.get_legend_handles_labels()
-                handles_total += h; labels_total += l
-
+                handles_right.append((line_R,fill_R))
+                labels_right.append(fr'[{lprops[sp]["label"]}]$\pm 1\sigma$')
+                
             else:
-                axL.plot(times, meanval, **lprops[sp])
-                axL.fill_between(times, minval, maxval,
+                line_L, = axL.plot(times, meanval, **lprops[sp])
+                fill_L = axL.fill_between(times, minval, maxval,
                                  color=lprops[sp]['color'], alpha=0.2)
+                handles_left.append((line_L,fill_L))
+                labels_left.append(fr'[{lprops[sp]["label"]}]$\pm 1\sigma$')
+            
 
         # ------------------------------------------------------------
         # AXIS LIMITS
@@ -227,8 +238,8 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         # Titles only on first row
         # ------------------------------------------------------------
         if i == 0:
-            axL.set_title('Density Scale-Factors', pad=28, fontsize=12)
-            axR.set_title('Precipitation Parameters', pad=28, fontsize=12)
+            axL.set_title('Density Scale-Factors', pad=43,)
+            axR.set_title('Precipitation Parameters', pad=43)
 
         # --------------------------------------------------------
         # AXIS LABELS
@@ -238,7 +249,7 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         cax.set_ylabel('E$_{o}$ [keV]', color=lprops['Echar']['color'])
         cax.tick_params(axis='y', labelcolor=lprops['Echar']['color'])
 
-        axL.set_ylabel('[cm$^{-3}$]')
+        # axL.set_ylabel('[cm$^{-3}$]')
         axR.set_ylabel('Total Energy Flux Q [uW/m$^2$]')
         cax.set_ylabel('Characteristic Energy E$_{o}$ [KeV]', color=lprops['Echar']['color'])
         cax.tick_params(axis='y', labelcolor=lprops['Echar']['color'])
@@ -247,29 +258,28 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         # --------------------------------------------------------
         # LEGENDS ONLY IN FIRST ROW
         # --------------------------------------------------------
-        
+        # print(f'Handles left: {handles_left}, labels left: {labels_left}')
         if i == 0:
-            # Left subplot legend (species except Q/Echar)
-            hL, lL = axL.get_legend_handles_labels()
+            # Left subplot legend
             axL.legend(
-                hL, lL,
+                handles_left, labels_left,
                 loc='upper center',
-                bbox_to_anchor=(0.5, 1.175),
+                bbox_to_anchor=(0.5, 1.3),
                 bbox_transform=axL.transAxes,
-                ncol=5,
-                fontsize=12,
+                ncol=len(handles_left)//1.5,
+                # fontsize=12,
                 frameon=False,
 
             )
 
-            # Right subplot legend (Q + Echar combined)
+            # Right subplot legend
             axR.legend(
-                handles_total, labels_total,
+                handles_right, labels_right,
                 loc='upper center',
                 bbox_to_anchor=(0.5, 1.175),
                 bbox_transform=axR.transAxes,
                 ncol=3,
-                fontsize=12,
+                # fontsize=12,
                 frameon=False,
 
             )
@@ -288,10 +298,12 @@ if __name__ == '__main__':
     suffixes = init('nqe', rootdir='model_neutral_qe')
     print(f'Found suffixes: {suffixes}')
     compiled_stats = compile_fit_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_neutral_qe')
-    
+    #%%
     #plot
     stats = compiled_stats.copy()
     dates = list(stats.keys())[:3]
     plot_fit_stats_multidates(stats, dates, savefig='./')
+
+# %%
 
 # %%
