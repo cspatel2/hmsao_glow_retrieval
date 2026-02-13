@@ -2,6 +2,7 @@
 from __future__ import annotations
 import datetime as dt
 from pathlib import Path
+from re import S
 from typing import List, Optional, SupportsFloat as Numeric
 from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
@@ -131,6 +132,12 @@ def compile_fit_data(suffixes: List[str], base_suffix: Optional[str] = None, roo
 #%%
 def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[str,xr.Dataset],dates:list[str], location: dict[str, float], same_yscale: bool = True, savefig: Optional[str] = None) -> None:
     fontsize = 12
+    plt.rcParams.update({'font.size': fontsize,
+                          'axes.labelsize': fontsize,
+                         'axes.titlesize': fontsize, 
+                         'legend.fontsize': fontsize,
+                         'figure.titlesize': fontsize})
+
     import matplotlib.units as munits
     converter = mdates.ConciseDateConverter()
     munits.registry[np.datetime64] = converter
@@ -165,10 +172,13 @@ def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[st
     N = len(dates)
     nrows = N
     ncols = 1
-    width_per_col = 6
-    height_per_row = 3
-    fig, ax = plt.subplots(N, 1, figsize=(width_per_col * ncols,
-        height_per_row * nrows), sharey=same_yscale, gridspec_kw={'wspace': 0.01, 'hspace': 0.4, 'left':0.1}) #, hspace = 0.15, wspace=0.025)
+    width_per_col = 9
+    height_per_row = 1.9
+    fig, ax = plt.subplots(N, 1, 
+                figsize=(width_per_col * ncols,
+                          height_per_row * nrows), 
+                sharey=same_yscale, 
+                gridspec_kw={'wspace': 0.02, 'hspace': 0.4, 'left':0.1}) #, hspace = 0.15, wspace=0.025)
 
     # --------------------------------------------------------
     # time axis limits
@@ -213,10 +223,10 @@ def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[st
         fds = compiled_fits[date].copy()
         # --- filter POES data for location ---
         tds = pds
-        # lonmin = location['lon'] - 30
-        # lonmax = location['lon'] + 30
-        # tds = pds.where(pds.lon > lonmin, drop=True)
-        # tds = tds.where(tds.lon < lonmax, drop=True)
+        lonmin = location['lon'] - 30
+        lonmax = location['lon'] + 30
+        tds = pds.where(pds.lon > lonmin, drop=True)
+        tds = tds.where(tds.lon < lonmax, drop=True)
         latmin = location['lat'] - 20
         latmax = location['lat'] + 20
         tds = tds.where(tds.lat > latmin, drop=True)
@@ -249,13 +259,14 @@ def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[st
 
 
             # --- plot data ---
-            obs_line = ax_curr.plot(otime, obs, color=lprops[spec]['color'], lw=1.5, ls = '--')
+            # obs_line, = ax_curr.plot(otime, obs*1.2, color='red', lw=1.5, ls = '--')
+            obs_line = ax_curr.scatter(otime, obs*5, color='red', s = 5, marker='^',)
             # obs_fill = ax_curr.fill_between(otime, obs - obs_std, obs + obs_std, color=lprops[spec]['color'], alpha=0.2)
 
             fit_line = ax_curr.plot(ftime, fit, **lprops[spec])
             fit_fill = ax_curr.fill_between(ftime, fit - fit_std, fit + fit_std, color=lprops[spec]['color'], alpha=0.2)
 
-            handles_total.append((obs_line[0]))#, obs_fill)) # fit and fill as one legend entry of observed
+            handles_total.append((obs_line))#, obs_fill)) # fit and fill as one legend entry of observed
             handles_total.append((fit_line[0], fit_fill)) # fit and fill as one legend entry of fitted
             labels_total.append(f'POES')
             labels_total.append(f'HiT&MIS')
@@ -264,14 +275,14 @@ def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[st
         ax_curr.set_xlim(xlims[i])
         # ax_curr.set_xlim(xlims[i])
 
-        ax_curr.set_ylim(-0.01, np.max(ymaxs)*0.6)
+        ax_curr.set_ylim(-0.01, np.max(ymaxs)*1.1)
 
         # --- Y labels ---
         # ax_curr.set_ylabel('Emission Brightness [kR]')
         fig.text(0.0001, 0.5, 'Total Enegry FLux, Q [mW/m$^{2}$]', va='center', rotation='vertical', fontsize=fontsize)
         if len(species) > 1:
-            fig.text(0.99, 0.5, 'Characteristic Energy, E$_{o}$ [eV]', va='center', rotation='vertical', fontsize=fontsize, color = lprops['E']['color'])
-            cax.tick_params(axis='y', colors=lprops['E']['color'])
+            fig.text(0.99, 0.5, 'Characteristic Energy, E$_{o}$ [eV]', va='center', rotation='vertical', fontsize=10, color = lprops['E']['color'])
+            cax.tick_params(axis='y', pad=10, colors=lprops['E']['color'])
 
         # --- Legend setup ---   
         if len(species) > 1:
@@ -283,7 +294,7 @@ def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[st
             ax_curr.legend(
             handles, labels,
             loc='upper center',
-            bbox_to_anchor=(0.5, 1.25),
+            bbox_to_anchor=(0.5, 1.35),
             bbox_transform=ax_curr.transAxes,
             ncol=legend_cols,
             fontsize=fontsize,
@@ -307,8 +318,8 @@ def plot_fit_vs_poes(compiled_poes: dict[str,xr.Dataset], compiled_fits: dict[st
 #%%
 
 datadir = '../data/POES_data'
-rootdir = 'model_neutral_qe'
-suffixes = init('nqe', rootdir=rootdir)
+rootdir = 'model_nqe3'
+suffixes = init('', rootdir=rootdir)
 print(f'Found suffixes: {suffixes}')
 comp_fits = compile_fit_data(suffixes[1:], base_suffix=suffixes[0], rootdir=rootdir)
 alldates = list(comp_fits.keys())
@@ -318,8 +329,8 @@ comp_poes = compile_poes_data(datadir, alldates)
 # %%
 
 LOCATION = {'lat': 67.84080387407106, 'lon':20.410219771333818}
-dates = alldates[:2] 
-plot_fit_vs_poes(comp_poes, comp_fits, dates, LOCATION)
+dates = alldates[2:5] 
+plot_fit_vs_poes(comp_poes, comp_fits, dates, LOCATION, same_yscale=False)
 
         
 

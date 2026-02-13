@@ -71,7 +71,7 @@ def compile_counts_data(counts_dir: Path, dates: Optional[List[str]]) -> dict[st
         fn = fns[-1]
         nds = xr.load_dataset(fn)
         ds = nds.copy()
-        daybool = [1 if z < 90+18 else 0 for z in ds.sza.values]
+        daybool = [1 if z < 90+6 else 0 for z in ds.sza.values]
         ds = ds.assign_coords(daybool = ('tstamp', daybool))
         if 'daybool' in list(ds.coords): #pick out only night time data and drop everything else
             ds = ds.where(ds.daybool == 0, drop=True)
@@ -103,7 +103,7 @@ def plot_fit_vs_observed_multidates_colN(compiled_fits:  dict[str, xr.Dataset],c
     Returns:
         None
     """
-    fontsize = 11    
+    fontsize = 8
     import matplotlib.units as munits
     converter = mdates.ConciseDateConverter()
     munits.registry[np.datetime64] = converter
@@ -136,7 +136,7 @@ def plot_fit_vs_observed_multidates_colN(compiled_fits:  dict[str, xr.Dataset],c
     # ------------------------------------------------------------
 
     N = len(dates)
-    fig, ax = plt.subplots(N, 2, figsize=(12, 3 * N),  gridspec_kw={'wspace': 0.01, 'hspace': 0.1, 'left': 0.1}) #, hspace = 0.15, wspace=0.025)
+    fig, ax = plt.subplots(N, 2, figsize=(7, 2* N),  gridspec_kw={'wspace': 0.01, 'hspace': 0.1, 'left': 0.1}) #, hspace = 0.15, wspace=0.025)
 
     # --------------------------------------------------------
     # time axis limits
@@ -226,6 +226,7 @@ def plot_fit_vs_observed_multidates_colN(compiled_fits:  dict[str, xr.Dataset],c
             color = 'black'
             lw = 0.55
 
+
             fit_line = ax_curr.plot(time, fit[za_idx,:],color = color, linewidth= lw )
             # fill_fit = ax_curr.fill_between(time, fit[za_idx,:]-fstd[za_idx,:], fit[za_idx,:]+fstd[za_idx,:], \
             #                                 color=color, alpha=0.1)
@@ -287,8 +288,13 @@ def plot_fit_vs_observed_multidates_colN(compiled_fits:  dict[str, xr.Dataset],c
 
 
 def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],compiled_counts: dict[str, xr.Dataset], dates: List[str], za_idx:int, savefig: Optional[Path] = None,same_yscale: bool= False) -> None:
-    fontsize = 10
-    
+    fontsize = 12
+    plt.rcParams.update({'font.size': fontsize,
+                          'axes.labelsize': fontsize,
+                         'axes.titlesize': fontsize, 
+                         'legend.fontsize': fontsize,
+                         'figure.titlesize': fontsize})
+
     import matplotlib.units as munits
     converter = mdates.ConciseDateConverter()
     munits.registry[np.datetime64] = converter
@@ -323,7 +329,7 @@ def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],co
     N = len(dates)
     nrows = N
     ncols = 1
-    width_per_col = 4
+    width_per_col = 9
     height_per_row = 2
     fig, ax = plt.subplots(N, 1, figsize=(width_per_col * ncols,
         height_per_row * nrows), sharey=same_yscale, gridspec_kw={'wspace': 0.01, 'hspace': 0.4, 'left':0.1}) #, hspace = 0.15, wspace=0.025)
@@ -388,7 +394,10 @@ def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],co
         # labels_total = {spec: [] for spec in species}
         handles_total, labels_total = [], []
 
-        ax_curr = ax[i]
+        if N == 1:
+            ax_curr = ax
+        else:
+            ax_curr = ax[i]
 
         for spec in species:
             # --- Extract data ---
@@ -401,11 +410,11 @@ def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],co
             # --- Plot observed ---
 
             obs_line = ax_curr.plot(time, obs[za_idx,:], **lprops[spec])
-            fill_obs = ax_curr.fill_between(time, obs[za_idx,:]-stds[za_idx,:], obs[za_idx,:]+stds[za_idx,:],\
+            fill_obs = ax_curr.fill_between(time, obs[za_idx,:]- 3* stds[za_idx,:], obs[za_idx,:]+ 3* stds[za_idx,:],\
                                              color=lprops[spec]['color'], alpha=0.2)
 
             # --- Plot fitted ---
-            lw = 1
+            lw = .8
 
             fit_line = ax_curr.plot(time, fit[za_idx,:],color = lprops[spec]['color'], linewidth= lw,  )
             # fill_fit = ax_curr.fill_between(time, fit[za_idx,:]-fstd[za_idx,:], fit[za_idx,:]+fstd[za_idx,:], \
@@ -430,7 +439,7 @@ def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],co
 
         # --- Y labels ---
         # ax_curr.set_ylabel('Emission Brightness [kR]')
-        fig.text(0.0001, 0.5, 'Emission Brightness [kR]', va='center', rotation='vertical', fontsize=fontsize)
+        fig.text(0.01, 0.5, 'Emission Brightness [kR]', va='center', rotation='vertical', fontsize=fontsize)
 
         # --- Titles only on first row ---
         # if i == 0:
@@ -445,7 +454,7 @@ def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],co
             loc='upper center',
             bbox_to_anchor=(0.5, 1.45),
             bbox_transform=ax_curr.transAxes,
-            ncol=len(handles)//2,
+            ncol=len(handles),
             fontsize=fontsize,
             frameon=False,
             )
@@ -461,16 +470,17 @@ def plot_fit_vs_observed_multidates_col1(compiled_fits: dict[str, xr.Dataset],co
         fig.savefig(savefn, dpi=300)
 # %%
 #%%
-suffixes = init('nqe', rootdir='model_neutral_qe')
+suffixes = init('', rootdir='model_nqe3')
 print(f'Found suffixes: {suffixes}')
-compiled_stats = compile_fit_intensity_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_neutral_qe')
+compiled_stats = compile_fit_intensity_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_nqe3')
 
 alldates = list(compiled_stats.keys())
 counts_dir = Path('/home/charmi/locsststor/proc/hmsao/l2c')
 complied_counts = compile_counts_data(counts_dir, alldates)
 #%%
-dates = alldates[:2]
-plot_fit_vs_observed_multidates_colN(compiled_stats, complied_counts, dates, za_idx=20)#, savefig=Path('./plots/fit_vs_observed/'))
-
-plot_fit_vs_observed_multidates_col1(compiled_stats, complied_counts, dates, za_idx=20)#, savefig=Path('./plots/fit_vs_observed/'))
+dates = alldates[2:5]
+# plot_fit_vs_observed_multidates_colN(compiled_stats, complied_counts, dates, za_idx=20)#, savefig=Path('./plots/fit_vs_observed/'))
 #%%
+plot_fit_vs_observed_multidates_col1(compiled_stats, complied_counts, dates, za_idx=20)#, savefig=Path('./plots/fit_vs_observed/'))
+
+# %%

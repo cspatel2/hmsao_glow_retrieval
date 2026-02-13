@@ -23,6 +23,8 @@ import matplotlib.dates as mdates
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 from plotting_functions import init
+from scipy.ndimage import gaussian_filter1d
+
 # %%
 
 def compile_fit_stats(suffixes: List[str], base_suffix: Optional[str] = None, rootdir:str|Path = ROOT_DIR) -> dict[str, xarray.Dataset]:
@@ -84,12 +86,12 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         dates (List[str]): The dates to plot.
         savefig (str | None): If provided, the path to save the figure. if None, the figure will not be saved. Default is None.
     """
-    fontszie = 12
-    plt.rcParams.update({'font.size': fontszie,
-                          'axes.labelsize': fontszie,
-                         'axes.titlesize': fontszie, 
-                         'legend.fontsize': fontszie,
-                         'figure.titlesize': fontszie})
+    fontsize = 10
+    plt.rcParams.update({'font.size': fontsize,
+                          'axes.labelsize': fontsize,
+                         'axes.titlesize': fontsize, 
+                         'legend.fontsize': fontsize,
+                         'figure.titlesize': fontsize})
     import matplotlib.units as munits
     converter = mdates.ConciseDateConverter()
     munits.registry[np.datetime64] = converter
@@ -126,7 +128,7 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
     # FIGURE SETUP: N rows (one per date), 2 columns
     # ------------------------------------------------------------
     N = len(dates)
-    fig, ax = plt.subplots(N, 2, figsize=(12, 3 * N), layout='constrained') #, hspace = 0.15, wspace=0.025)
+    fig, ax = plt.subplots(N, 2, figsize=(8, 3* N), layout='constrained') #, hspace = 0.15, wspace=0.025)
 
     # locator = mdates.AutoDateLocator()
     # formatter = mdates.ConciseDateFormatter(locator)
@@ -199,22 +201,26 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
             dss = ds.sel(species=sp)
 
             meanval = dss['meanval'].values
-            minval = dss['minval'].values
-            maxval = dss['maxval'].values
+            stdval = dss['stdval'].values
+            minval = meanval - stdval
+            maxval = meanval + stdval
 
             if sp == 'Q':
-                conv = 1e3
+                conv = 1
                 line_R, = axR.plot(times, meanval * conv, **lprops[sp])
-                fill_R = axR.fill_between(times, minval*conv, maxval*conv,
-                                 color=lprops[sp]['color'], alpha=0.2)
+                fill_R = axR.fill_between(times, minval*conv, maxval*conv, color=lprops[sp]['color'], alpha=0.2)
                 handles_right.append((line_R,fill_R))
                 labels_right.append(fr'[{lprops[sp]["label"]}]$\pm 1\sigma$')
 
             elif sp == 'Echar':
-                conv = 1e-3
-                line_R, = cax.plot(times, meanval * conv, **lprops[sp])
-                fill_R = cax.fill_between(times, minval*conv, maxval*conv,
-                                 color=lprops[sp]['color'], alpha=0.2)
+                conv = 1e-3 #kev 
+                y = gaussian_filter1d(meanval * conv, sigma = 3)
+                ystd = gaussian_filter1d(stdval * conv, sigma = 3)
+                ymin = y - ystd
+                ymax = y + ystd
+
+                line_R, = cax.plot(times, y, **lprops[sp], alpha=0.3)
+                fill_R = cax.fill_between(times, ymin, ymax,color=lprops[sp]['color'], alpha=0.2)
                 handles_right.append((line_R,fill_R))
                 labels_right.append(fr'[{lprops[sp]["label"]}]$\pm 1\sigma$')
                 
@@ -238,22 +244,24 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
         # Titles only on first row
         # ------------------------------------------------------------
         if i == 0:
-            axL.set_title('Density Scale-Factors', pad=43,)
-            axR.set_title('Precipitation Parameters', pad=43)
+            axL.set_title('Density Scale-Factors', pad=48)
+            axR.set_title('Precipitation Parameters', pad=48)
 
         # --------------------------------------------------------
         # AXIS LABELS
         # --------------------------------------------------------
         # axL.set_ylabel('[cm$^{-3}$]')
         axR.set_ylabel('Q [uW/m$^2$]')
+        # axR.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
         cax.set_ylabel('E$_{o}$ [keV]', color=lprops['Echar']['color'])
         cax.tick_params(axis='y', labelcolor=lprops['Echar']['color'])
 
         # axL.set_ylabel('[cm$^{-3}$]')
-        axR.set_ylabel('Total Energy Flux Q [uW/m$^2$]')
-        cax.set_ylabel('Characteristic Energy E$_{o}$ [KeV]', color=lprops['Echar']['color'])
+        axR.set_ylabel('Q [mW/m$^2$]')
+        cax.set_ylabel('E$_{o}$ [KeV]', color=lprops['Echar']['color'])
         cax.tick_params(axis='y', labelcolor=lprops['Echar']['color'])
 
+        axL.set_ylabel('$\\alpha_{sp}$')
 
         # --------------------------------------------------------
         # LEGENDS ONLY IN FIRST ROW
@@ -264,9 +272,9 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
             axL.legend(
                 handles_left, labels_left,
                 loc='upper center',
-                bbox_to_anchor=(0.5, 1.3),
+                bbox_to_anchor=(0.5, 1.35),
                 bbox_transform=axL.transAxes,
-                ncol=len(handles_left)//1.5,
+                ncol=len(handles_left)//2,
                 # fontsize=12,
                 frameon=False,
 
@@ -295,15 +303,12 @@ def plot_fit_stats_multidates(stats: dict[str, xarray.Dataset], dates: List[str]
 # %%
 if __name__ == '__main__':
     # Populate directories and compile stats
-    suffixes = init('nqe', rootdir='model_neutral_qe')
+    suffixes = init('', rootdir='model_nqe3')
     print(f'Found suffixes: {suffixes}')
-    compiled_stats = compile_fit_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_neutral_qe')
+    compiled_stats = compile_fit_stats(suffixes[1:], base_suffix=suffixes[0], rootdir='model_nqe3')
     #%%
     #plot
     stats = compiled_stats.copy()
-    dates = list(stats.keys())[:3]
+    dates = list(stats.keys())[2:5]
     plot_fit_stats_multidates(stats, dates, savefig='./')
-
-# %%
-
 # %%
